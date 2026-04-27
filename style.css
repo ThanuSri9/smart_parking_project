@@ -1005,3 +1005,77 @@ kbd {
 .ai-footer-hint {
   font-size: 10px; color: var(--muted); display: block; text-align: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   GATE / ENTRY POINT SELECTOR  (inside mode modal)
+   ═══════════════════════════════════════════════════════════════════ */
+.gate-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(46,134,171,0.12);
+  border: 1px solid rgba(46,134,171,0.30);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 12px 0 16px;
+  flex-wrap: wrap;
+}
+
+.gate-select-label {
+  font-size: 13px;
+  color: var(--blue2);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gate-select {
+  flex: 1;
+  min-width: 160px;
+  background: rgba(10,20,40,0.85);
+  border: 1px solid rgba(46,134,171,0.40);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.gate-select:hover,
+.gate-select:focus {
+  border-color: var(--blue2);
+  box-shadow: 0 0 8px rgba(26,173,206,0.30);
+}
+.gate-select option {
+  background: #0d1525;
+  color: var(--text);
+}
+
+/* ── Optimal lot badge (shown in results when AI picks best lot) ── */
+.optimal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg,rgba(39,174,96,0.25),rgba(26,173,206,0.20));
+  border: 1px solid rgba(39,174,96,0.45);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #5EE88A;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+/* ── Traffic-rule info strip (shown below directions) ─────────── */
+.traffic-rules-strip {
+  background: rgba(255,153,0,0.10);
+  border: 1px solid rgba(255,153,0,0.30);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: #FFD080;
+  line-height: 1.6;
+}
+.traffic-rules-strip strong { color: #FF9900; }

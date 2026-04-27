@@ -765,6 +765,117 @@ const CampusBuilder = (() => {
   }
 
   // ══════════════════════════════════════════════════════════════════
+  //  ROAD DIRECTION ARROWS
+  //  Flat chevron markers painted onto every road showing legal travel
+  //  direction. Roundabouts get CCW-only arrows; all other roads are
+  //  bidirectional (arrows in both directions, staggered by half-interval).
+  // ══════════════════════════════════════════════════════════════════
+  function buildDirectionArrows() {
+    const INTERVAL  = 80;   // metres between arrow groups along a road
+    const HALF_INT  = INTERVAL / 2;
+    const ARROW_Y   = 0.55; // just above road surface
+    const ARROW_COL_BIDIR = 0xFFFFFF;  // white – bidirectional roads
+    const ARROW_COL_ONEWAY = 0xFF9900; // orange – one-way segments
+
+    // Determine one-way set from trafficRules for roundabout ring edges
+    const owSet = new Set();
+    const rules = (typeof CAMPUS !== 'undefined') && CAMPUS.trafficRules;
+    if (rules && Array.isArray(rules.oneWayEdges)) {
+      for (const [a, b] of rules.oneWayEdges) owSet.add(a + '|' + b);
+    }
+
+    // Small flat triangle (arrow head) geometry – reused via instancing
+    const arrowGeo = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+       0,  0,  1.4,  // tip (forward)
+      -0.7, 0, -0.7,  // left base
+       0.7, 0, -0.7,  // right base
+    ]);
+    arrowGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    arrowGeo.setIndex([0, 1, 2]);
+    arrowGeo.computeVertexNormals();
+
+    function _placeArrow(cx, cz, angle, color) {
+      const m = new THREE.Mesh(
+        arrowGeo,
+        new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })
+      );
+      m.position.set(cx, ARROW_Y, cz);
+      m.rotation.y = angle;
+      m.scale.set(3.5, 1, 3.5);
+      scene.add(m);
+    }
+
+    // ── Straight road segments ───────────────────────────────────────
+    CAMPUS.roads.forEach(([x1, z1, x2, z2]) => {
+      const dx  = x2 - x1, dz = z2 - z1;
+      const len = Math.hypot(dx, dz);
+      if (len < 20) return;
+      const ux = dx / len, uz = dz / len;
+      const fwdAngle = Math.atan2(ux, uz);   // forward direction
+      const bwdAngle = fwdAngle + Math.PI;
+
+      // Bidirectional: forward arrows at 0, INTERVAL, 2*INTERVAL…
+      //                backward arrows offset by HALF_INT
+      let d = INTERVAL * 0.5;
+      while (d < len - 10) {
+        const cx = x1 + ux * d, cz = z1 + uz * d;
+        _placeArrow(cx - uz * 2.5, cz + ux * 2.5, fwdAngle, ARROW_COL_BIDIR);  // right lane fwd
+        _placeArrow(cx + uz * 2.5, cz - ux * 2.5, bwdAngle, ARROW_COL_BIDIR);  // left lane bwd
+        d += INTERVAL;
+      }
+    });
+
+    // ── Roundabout ring CCW arrows ────────────────────────────────────
+    CAMPUS.roundabouts.forEach(({ pos:[cx, cz], r }) => {
+      const ringR  = r + 4;   // mid-lane radius
+      const nArrows = Math.max(6, Math.round(2 * Math.PI * ringR / INTERVAL));
+      for (let i = 0; i < nArrows; i++) {
+        const theta    = (2 * Math.PI * i / nArrows);
+        const ax       = cx + ringR * Math.cos(theta);
+        const az       = cz + ringR * Math.sin(theta);
+        // CCW tangent direction: perpendicular to radius, counter-clockwise
+        const tangentAngle = Math.atan2(Math.cos(theta), -Math.sin(theta));
+        _placeArrow(ax, az, tangentAngle, ARROW_COL_ONEWAY);
+      }
+    });
+  }
+
+  // ── Highlight selected parking slot ─────────────────────────────────
+  // Called by VehicleController when a specific slot is claimed so the
+  // user can see exactly which space is reserved for them.
+  const _slotHighlights = [];
+  function highlightSlot(lotId, slotX, slotZ) {
+    clearSlotHighlights();
+    // Pulsing ring marker above the slot
+    const ringGeo = new THREE.RingGeometry(3.0, 4.2, 24);
+    const ringMat = new THREE.MeshLambertMaterial({
+      color: 0x00FF88, emissive: new THREE.Color(0x004422),
+      side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(slotX, 1.5, slotZ);
+    scene.add(ring);
+    _slotHighlights.push(ring);
+
+    // Vertical beam for visibility from above
+    const beamGeo = new THREE.CylinderGeometry(0.4, 0.4, 28, 8);
+    const beamMat = new THREE.MeshLambertMaterial({
+      color: 0x00FF88, transparent: true, opacity: 0.4,
+    });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(slotX, 15, slotZ);
+    scene.add(beam);
+    _slotHighlights.push(beam);
+  }
+
+  function clearSlotHighlights() {
+    _slotHighlights.forEach(m => scene.remove(m));
+    _slotHighlights.length = 0;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   //  NAVIGATION ROUTE
   // ══════════════════════════════════════════════════════════════════
   let _routeLine = null;
@@ -866,12 +977,16 @@ const CampusBuilder = (() => {
 
     _prog(68, 'Painting road markings…');
     buildRoadMarkings(); await _yield(16);
+
+    _prog(70, 'Painting road direction arrows…');
+    buildDirectionArrows(); await _yield(16);
   }
 
   return {
-    build,                               // now async – await it in main.js
+    build,
     highlightLot, resetLotHighlight, resetAllLotHighlights,
     showRoute, clearRoute, pulseRoute,
+    highlightSlot, clearSlotHighlights,
     tickTrafficSignals,
     getTrafficLightPhase,
     updateSlotOccupancy,
