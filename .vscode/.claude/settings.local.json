@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(dir \"D:\\\\smart_parking_project\\\\js\\\\\")",
+      "Bash(python3 -c \"import os; print\\(os.listdir\\('/mnt/d/smart_parking_project/js'\\)\\)\")",
+      "Bash(python -c \"import os; print\\(os.listdir\\('D:/smart_parking_project/js'\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -v \"//\")",
+      "Bash(cat)",
+      "Read(//tmp/**)"
+    ]
+  }
+}

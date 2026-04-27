@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eagle Eye University – Smart Parking System</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Loading Screen ─────────────────────────────────────────────── -->
+<div id="loading-screen">
+  <!-- Animated background particles -->
+  <div class="ls-particles">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <!-- Grid overlay -->
+  <div class="ls-grid"></div>
+
+  <div class="loading-content">
+    <!-- Orbital rings around logo -->
+    <div class="logo-orbit-wrapper">
+      <div class="orbit orbit-1"></div>
+      <div class="orbit orbit-2"></div>
+      <div class="orbit orbit-3"></div>
+      <div class="logo-core">
+        <div class="logo-eagle">🦅</div>
+        <div class="university-logo">EEU</div>
+      </div>
+    </div>
+
+    <h1 class="ls-title">Eagle Eye University</h1>
+    <p class="ls-subtitle">Smart Campus Parking Management System</p>
+
+    <!-- Progress section -->
+    <div class="ls-progress-wrap">
+      <div class="loading-bar">
+        <div class="loading-fill" id="loading-fill">
+          <div class="loading-shimmer"></div>
+        </div>
+      </div>
+      <div class="ls-pct-row">
+        <span id="loading-text">Initializing campus…</span>
+        <span id="loading-pct">0%</span>
+      </div>
+    </div>
+
+    <!-- Info badges -->
+    <div class="ls-badges">
+      <div class="ls-badge"><span class="ls-dot green"></span>3D Campus Engine</div>
+      <div class="ls-badge"><span class="ls-dot blue"></span>Smart Parking AI</div>
+      <div class="ls-badge"><span class="ls-dot gold"></span>Live Navigation</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 3D Canvas ──────────────────────────────────────────────────── -->
+<canvas id="campus-canvas"></canvas>
+
+<!-- ── Camera HUD ─────────────────────────────────────────────────── -->
+<div id="camera-hud" class="hidden">
+  <div class="hud-title">Camera Controls</div>
+  <div class="hud-item"><kbd>Drag</kbd> Orbit</div>
+  <div class="hud-item"><kbd>Scroll</kbd> Zoom</div>
+  <div class="hud-item"><kbd>R-Drag</kbd> Pan</div>
+  <div class="hud-item">
+    <kbd>Auto</kbd>
+    <span id="auto-rotate-toggle" class="toggle-btn active">ON</span>
+  </div>
+</div>
+
+<!-- ── Zoom Controls ──────────────────────────────────────────────── -->
+<div id="zoom-controls" class="hidden">
+  <button id="zoom-in-btn"    title="Zoom In">+</button>
+  <button id="zoom-reset-btn" title="Reset Camera">⌂</button>
+  <button id="zoom-out-btn"   title="Zoom Out">−</button>
+</div>
+
+<!-- ── Campus Info Panel ──────────────────────────────────────────── -->
+<div id="campus-info" class="hidden">
+  <div class="info-logo">EEU</div>
+  <div class="info-name">Eagle Eye University</div>
+  <div class="info-subtitle">EEU Smart Parking</div>
+  <div class="info-stats">
+    <div class="stat-item">
+      <span class="stat-value" id="total-vehicles">—</span>
+      <span class="stat-label">On Campus</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="available-spots" style="color:#27AE60">—</span>
+      <span class="stat-label">Free Spots</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value" id="occupied-spots" style="color:#E74C3C">—</span>
+      <span class="stat-label">Occupied</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Intro Countdown ────────────────────────────────────────────── -->
+<div id="intro-countdown" class="hidden">
+  <span class="countdown-subtext">Explore campus for</span>
+  <span class="countdown-number" id="countdown-number">20</span>
+  <span class="countdown-text">sec then select mode</span>
+  <button id="skip-intro-btn">Select Now →</button>
+</div>
+
+<!-- ── Your location badge (always visible after mode select) ─────── -->
+<div id="user-location-badge" class="hidden">
+  <span class="ulb-dot"></span>
+  <span id="ulb-text">📍 South Main Gate</span>
+</div>
+
+<!-- ── Mode Selection Modal ───────────────────────────────────────── -->
+<div id="mode-modal" class="hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-logo">🦅</div>
+    <h2>Welcome to Eagle Eye University</h2>
+    <p>How would you like to park today?</p>
+    <div class="mode-buttons">
+      <button id="regular-parking-btn" class="mode-btn regular">
+        <span class="btn-icon">🚗</span>
+        <span class="btn-title">Regular Parking</span>
+        <span class="btn-desc">Find parking near your destination</span>
+      </button>
+      <button id="event-parking-btn" class="mode-btn event">
+        <span class="btn-icon">🎪</span>
+        <span class="btn-title">Event Parking</span>
+        <span class="btn-desc">Stadium, arena &amp; special events</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Regular Parking Panel ──────────────────────────────────────── -->
+<div id="regular-panel" class="side-panel hidden">
+  <div class="panel-header">
+    <button class="back-btn" id="back-from-regular">←</button>
+    <h3>Regular Parking</h3>
+    <button class="close-panel-btn" id="close-regular">✕</button>
+  </div>
+
+  <!-- User location strip -->
+  <div class="location-strip">
+    <span class="loc-dot"></span>
+    <div>
+      <div class="loc-label">Your Location</div>
+      <div class="loc-value">South Main Gate</div>
+    </div>
+  </div>
+
+  <div class="panel-body">
+    <div class="form-group">
+      <label>Where are you going?</label>
+      <select id="destination-select">
+        <option value="">— Select your destination —</option>
+        <optgroup label="📚 Academic">
+          <option value="main-library">Main Library</option>
+          <option value="admin">Administration Building</option>
+          <option value="block-a">Academic Block A</option>
+          <option value="block-b">Academic Block B</option>
+          <option value="block-c">Academic Block C</option>
+          <option value="block-d">Academic Block D</option>
+          <option value="block-e">Academic Block E</option>
+          <option value="block-f">Academic Block F</option>
+          <option value="engineering">Engineering Hall</option>
+          <option value="science">Science Hall</option>
+          <option value="business">Business School</option>
+          <option value="cs-building">CS &amp; IT Building</option>
+          <option value="law-school">Law School</option>
+          <option value="fine-arts">Fine Arts Center</option>
+          <option value="med-school">Medical School</option>
+          <option value="pharmacy">Pharmacy School</option>
+        </optgroup>
+        <optgroup label="🎓 Student Life">
+          <option value="student-center">Student Center</option>
+          <option value="food-court-1">Main Food Court</option>
+          <option value="food-court-2">North Food Court</option>
+          <option value="recreation-center">Recreation Center</option>
+          <option value="bookstore">EEU Bookstore</option>
+        </optgroup>
+        <optgroup label="🏠 Residential">
+          <option value="dorm-a">Eagle Residence Hall A</option>
+          <option value="dorm-b">Eagle Residence Hall B</option>
+          <option value="dorm-c">Eagle Residence Hall C</option>
+          <option value="dorm-d">Eagle Residence Hall D</option>
+          <option value="dorm-e">Eagle Residence Hall E</option>
+          <option value="dining-hall">Eagle Dining Hall</option>
+          <option value="apt-a">Faculty Apartments A</option>
+          <option value="apt-b">Faculty Apartments B</option>
+          <option value="apt-c">Faculty Apartments C</option>
+        </optgroup>
+        <optgroup label="🏥 Medical">
+          <option value="hospital">University Hospital</option>
+          <option value="health-center">Student Health Center</option>
+        </optgroup>
+        <optgroup label="🏟️ Sports &amp; Rec">
+          <option value="aquatic-center">Aquatic Center</option>
+          <option value="track-complex">Track &amp; Field</option>
+        </optgroup>
+        <optgroup label="🏢 Other">
+          <option value="church">EEU Chapel</option>
+          <option value="research-park">Research Park A</option>
+          <option value="research-park-b">Research Park B</option>
+          <option value="concert-hall">Eagle Concert Hall</option>
+          <option value="auditorium">EEU Auditorium</option>
+          <option value="greenhouse">Greenhouse Complex</option>
+        </optgroup>
+      </select>
+    </div>
+    <button id="find-parking-btn" class="primary-btn" disabled>
+      🔍 Find Nearest Parking
+    </button>
+  </div>
+
+  <div id="parking-results" class="hidden">
+    <div class="results-header">
+      <h4 id="results-title">Nearby Parking</h4>
+      <span class="results-hint">Tap a lot to see details · Green = closest</span>
+    </div>
+    <div id="parking-lot-list"></div>
+  </div>
+</div>
+
+<!-- ── Event Parking Panel ────────────────────────────────────────── -->
+<div id="event-panel" class="side-panel hidden">
+  <div class="panel-header">
+    <button class="back-btn" id="back-from-event">←</button>
+    <h3>Event Parking</h3>
+    <button class="close-panel-btn" id="close-event">✕</button>
+  </div>
+
+  <!-- User location strip -->
+  <div class="location-strip">
+    <span class="loc-dot"></span>
+    <div>
+      <div class="loc-label">Your Location</div>
+      <div class="loc-value">South Main Gate</div>
+    </div>
+  </div>
+
+  <div class="panel-body">
+    <div class="form-group">
+      <label>Event Venue</label>
+      <select id="event-venue-select">
+        <option value="">— Select venue —</option>
+        <option value="football-stadium">🏈 Football Stadium</option>
+        <option value="basketball-arena">🏀 Eagle Eye Arena (Basketball)</option>
+        <option value="soccer-field">⚽ Soccer Complex</option>
+        <option value="concert-hall">🎵 Eagle Concert Hall</option>
+        <option value="auditorium">🎭 EEU Auditorium</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Parking Preference</label>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="parking-type" value="all" checked>
+          <span>All Options</span>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="parking-type" value="free">
+          <span>Free Only</span>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="parking-type" value="paid">
+          <span>Paid Only</span>
+        </label>
+      </div>
+    </div>
+
+    <button id="find-event-parking-btn" class="primary-btn" disabled>
+      🔍 Find Event Parking
+    </button>
+  </div>
+
+  <div id="event-parking-results" class="hidden">
+    <div class="results-header">
+      <h4 id="event-results-title">Event Parking</h4>
+      <span class="results-hint">🟡 = Paid &nbsp;🟢 = Free</span>
+    </div>
+    <div id="event-lot-list"></div>
+  </div>
+</div>
+
+<!-- ── Directions Panel ───────────────────────────────────────────── -->
+<div id="direction-panel" class="hidden">
+  <div class="direction-header">
+    <button id="back-to-results">← Back</button>
+    <h3 id="direction-title">Navigating…</h3>
+  </div>
+  <div class="direction-steps" id="direction-steps"></div>
+  <div class="direction-footer">
+    <div class="direction-info">
+      <span id="direction-distance">— mi</span>
+      <span id="direction-time">— min</span>
+    </div>
+    <button id="start-navigation-btn" class="primary-btn">▶ Start Navigation</button>
+    <button id="cancel-navigation-btn" class="secondary-btn" style="width:100%;margin-top:8px">✕ Cancel</button>
+  </div>
+</div>
+
+<!-- ── Lot Detail Popup ───────────────────────────────────────────── -->
+<div id="lot-popup" class="hidden">
+  <div class="popup-header">
+    <span id="popup-lot-id">Lot P1</span>
+    <button id="close-popup">✕</button>
+  </div>
+  <div class="popup-body">
+    <div class="popup-name" id="popup-lot-name">Parking Lot</div>
+    <div class="popup-availability">
+      <div class="avail-bar">
+        <div class="avail-fill" id="popup-avail-bar" style="width:60%"></div>
+      </div>
+      <div class="avail-text">
+        <span id="popup-free">—</span> / <span id="popup-total">—</span> spots
+      </div>
+    </div>
+    <div class="popup-details">
+      <div class="popup-detail-row"><span>Time Limit</span><span id="popup-time-limit">—</span></div>
+      <div class="popup-detail-row"><span>Cost</span><span id="popup-cost">—</span></div>
+    </div>
+    <button id="popup-navigate-btn" class="primary-btn" style="margin-top:12px">🧭 Navigate Here</button>
+  </div>
+</div>
+
+<!-- ── 100m Arrival Preview ──────────────────────────────────────── -->
+<div id="arrival-preview" class="hidden">
+  <div class="ap-header">
+    <span class="ap-icon">🅿️</span>
+    <div>
+      <div id="ap-lot-name" class="ap-lot-name">Parking Lot</div>
+      <div id="ap-distance" class="ap-dist">📍 Approaching…</div>
+    </div>
+  </div>
+  <div class="ap-legend">
+    <span class="ap-legend-item"><span style="color:#27AE60">■</span> Empty</span>
+    <span class="ap-legend-item"><span style="color:#E74C3C">■</span> Occupied</span>
+  </div>
+  <div id="ap-grid" class="ap-grid"></div>
+</div>
+
+<!-- ── AI Navigator Panel ─────────────────────────────────────────── -->
+<div id="ai-navigator" class="hidden">
+  <div class="ai-nav-header">
+    <div class="ai-nav-icon">🤖</div>
+    <div class="ai-nav-title">
+      <span class="ai-nav-label">AI Campus Navigator</span>
+      <span class="ai-nav-badge">LIVE</span>
+    </div>
+    <button class="ai-nav-close" onclick="document.getElementById('ai-navigator').classList.add('hidden')">✕</button>
+  </div>
+  <!-- Typing dots shown during "thinking" -->
+  <div id="ai-typing-dots" class="ai-typing hidden">
+    <span></span><span></span><span></span>
+  </div>
+  <!-- Current instruction bubble -->
+  <div id="ai-bubble" class="ai-bubble">
+    Calculating best route…
+  </div>
+  <div class="ai-nav-footer">
+    <span class="ai-footer-hint">🚦 Follow traffic signals &nbsp;·&nbsp; 🅿️ EEU Smart Parking</span>
+  </div>
+</div>
+
+<!-- ── Toast Notification ─────────────────────────────────────────── -->
+<div id="notification" class="hidden">
+  <span id="notification-text"></span>
+</div>
+
+<!-- ── Active Navigation Overlay ─────────────────────────────────── -->
+<div id="nav-active-overlay" class="hidden">
+  <div style="position:relative">
+    <div id="nav-progress-bar"></div>
+  </div>
+  <div class="nav-status">
+    <div class="nav-icon">🚗</div>
+    <div class="nav-text">
+      <div id="nav-current-step">Navigating…</div>
+      <div id="nav-next-step" class="nav-next"></div>
+    </div>
+    <div class="nav-progress">
+      <span id="nav-distance">— mi</span>
+    </div>
+  </div>
+  <div class="nav-arrived hidden" id="nav-arrived">
+    <div>
+      <div class="spaces-count" id="spaces-count">—</div>
+      <div class="spaces-label">spaces available</div>
+    </div>
+    <div style="flex:1;padding-left:16px">
+      <div style="font-size:16px;font-weight:700;color:#27AE60">🅿️ You have arrived!</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Park in any marked space</div>
+    </div>
+  </div>
+  <button id="end-navigation-btn">End Navigation</button>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────────── -->
+<!-- Three.js – local copy (no CDN dependency) -->
+<script src="js/lib/three.min.js"></script>
+<script src="js/lib/OrbitControls.js"></script>
+<script src="js/config.js"></script>
+<script src="js/roadnetwork.js"></script><!-- Road surface model: must load after config, before all navigation -->
+<script src="js/trajectory.js"></script><!-- Trajectory layer: path → dense arc/linear trajectory → controller -->
+<script src="js/scene.js"></script>
+<script src="js/campus.js"></script>
+<script src="js/parking.js"></script>
+<script src="js/vehicles.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>
