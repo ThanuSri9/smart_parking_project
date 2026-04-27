@@ -121,6 +121,21 @@
     <div class="modal-logo">🦅</div>
     <h2>Welcome to Eagle Eye University</h2>
     <p>How would you like to park today?</p>
+
+    <!-- Entry gate selection -->
+    <div class="gate-select-row">
+      <label class="gate-select-label" for="gate-select">📍 Enter campus via:</label>
+      <select id="gate-select" class="gate-select">
+        <option value="south-main">South Main Gate</option>
+        <option value="south-east">Southeast Gate</option>
+        <option value="east">East Gate</option>
+        <option value="north">North Gate</option>
+        <option value="west">West Gate</option>
+        <option value="northeast">Northeast Gate</option>
+        <option value="northwest">Northwest Gate</option>
+      </select>
+    </div>
+
     <div class="mode-buttons">
       <button id="regular-parking-btn" class="mode-btn regular">
         <span class="btn-icon">🚗</span>
@@ -148,8 +163,8 @@
   <div class="location-strip">
     <span class="loc-dot"></span>
     <div>
-      <div class="loc-label">Your Location</div>
-      <div class="loc-value">South Main Gate</div>
+      <div class="loc-label">Your Entry Point</div>
+      <div class="loc-value" id="panel-gate-name">South Main Gate</div>
     </div>
   </div>
 

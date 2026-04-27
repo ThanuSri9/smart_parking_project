@@ -1001,6 +1001,322 @@ def add_hud():
 
 
 # ═════════════════════════════════════════════════════════════════════
+#  SMART PARKING NAVIGATION SYSTEM
+#  Directed-graph A* with one-way traffic rules and turn-cost penalties.
+#
+#  Public API:
+#    find_valid_path(start_gate_id)  → best lot + full path
+#    find_path_to_lot(lot_id, gate)  → path to a specific lot
+# ═════════════════════════════════════════════════════════════════════
+
+import heapq as _hq
+
+# ── Waypoint positions [x, z] – mirrors config.js coordinate system ──
+_WP = {
+    'G_SM':[0,-520],'G_SE':[300,-520],'G_E':[530,0],'G_N':[0,520],
+    'G_W':[-530,0],'G_NE':[420,430],'G_NW':[-420,430],
+    'NS_S1':[0,-450],'NS_S2':[0,-370],'NS_SC':[0,-200],'NS_MC':[0,-100],
+    'NS_NC':[0,100],'NS_NM':[0,200],'NS_N1':[0,380],'NS_N2':[0,450],
+    'NS_SPER':[0,-420],
+    'R0_S':[0,-26],'R0_SE':[18,-18],'R0_E':[26,0],'R0_NE':[18,18],
+    'R0_N':[0,26],'R0_NW':[-18,18],'R0_W':[-26,0],'R0_SW':[-18,-18],
+    'R1_S':[0,-322],'R1_SE':[16,-316],'R1_E':[22,-300],'R1_NE':[16,-284],
+    'R1_N':[0,-278],'R1_NW':[-16,-284],'R1_W':[-22,-300],'R1_SW':[-16,-316],
+    'R2_S':[0,278],'R2_SE':[16,284],'R2_E':[22,300],'R2_NE':[16,316],
+    'R2_N':[0,322],'R2_NW':[-16,316],'R2_W':[-22,300],'R2_SW':[-16,284],
+    'R3_W':[278,0],'R3_NW':[284,16],'R3_N':[300,22],'R3_NE':[316,16],
+    'R3_E':[322,0],'R3_SE':[316,-16],'R3_S':[300,-22],'R3_SW':[284,-16],
+    'R4_W':[-322,0],'R4_NW':[-316,16],'R4_N':[-300,22],'R4_NE':[-284,16],
+    'R4_E':[-278,0],'R4_SE':[-284,-16],'R4_S':[-300,-22],'R4_SW':[-316,-16],
+    'SX_W':[-200,-300],'SX_E':[200,-300],'SX_EE':[290,-300],'SX_WW':[-350,-300],
+    'SE_S1':[300,-450],'SE_S2':[300,-360],'SE_N':[300,-280],
+    'NR_W':[-400,300],'NR_WM':[-200,300],'NR_EM':[200,300],'NR_E':[400,300],
+    'NR_NESPUR':[420,300],'NR_NE':[420,420],'NR_NW':[-420,420],
+    'EW_W1':[-450,0],'EW_W2':[-370,0],'EW_WM':[-200,0],'EW_WC':[-100,0],
+    'EW_EC':[100,0],'EW_EM':[200,0],'EW_E1':[380,0],'EW_E2':[450,0],
+    'HOSP_J':[-300,80],'HOSP_E':[-400,80],
+    'APT_J':[-400,0],'APT_S':[-400,-80],
+    'PP5_J':[-455,-80],'PP5_ACC2':[-455,-68],
+    'DORM_EW':[400,0],'DORM_N':[400,150],'DORM_S':[400,-150],'DORM_SE':[400,-250],
+    'SA_W':[0,-420],'SA_M':[175,-420],'SA_P11':[230,-420],'SA_E':[350,-420],
+    'RES_N':[300,-100],'RES_M':[300,-220],'RES_E':[360,-220],
+    'AS_E1':[100,-200],'AS_E2':[185,-200],
+    'EAST_N1':[300,55],'EAST_N2':[300,140],
+    'SE_ART':[300,-350],'ART_J':[150,-350],'ART_W':[-150,-350],
+    'PP15_J':[-290,-300],'PP15_ACC':[-290,-335],
+    'PP1_ACC':[130,-220],'PP13_J':[-420,-80],
+    # Lot entry waypoints
+    'PP1':[130,-265],'PP2':[185,-215],'PP3':[-310,272],'PP4':[218,378],
+    'PP5':[-455,-56],'PP6':[-200,142],'PP7':[418,-257],'PP8':[330,138],
+    'PP9':[360,-280],'PP10':[-45,455],'PP11':[230,-413],'PP12':[308,52],
+    'PP13':[-420,-28],'PP14':[460,332],'PP15':[-290,-357],
+    'PP3_ACC':[-310,300],'PP4_ACC':[218,302],'PP6_N':[-200,82],
+}
+
+# ── Directed adjacency list – mirrors CAMPUS.waypoints.links ─────────
+_EDGES = {
+    'G_SM':['NS_S1'],'G_SE':['SE_S1'],'G_E':['EW_E2'],
+    'G_N':['NS_N2'],'G_W':['EW_W1'],'G_NE':['NR_NE'],'G_NW':['NR_NW'],
+    'NS_S1':['G_SM','NS_S2'],'NS_S2':['NS_S1','R1_S','NS_SPER'],
+    'NS_SPER':['NS_S2','SA_W'],
+    'R1_S':['NS_S2','R1_SE','R1_SW'],'R1_SE':['R1_E','R1_S'],
+    'R1_E':['R1_NE','SX_E','R1_SE'],'R1_NE':['R1_N','R1_E'],
+    'R1_N':['NS_SC','R1_NW','R1_NE'],'R1_NW':['R1_W','R1_N'],
+    'R1_W':['R1_SW','SX_W','R1_NW'],'R1_SW':['R1_S','R1_W'],
+    'NS_SC':['R1_N','NS_MC','AS_E1'],'NS_MC':['NS_SC','R0_S'],
+    'R0_S':['NS_MC','R0_SE','R0_SW'],'R0_SE':['R0_E','R0_S'],
+    'R0_E':['R0_NE','EW_EC','R0_SE'],'R0_NE':['R0_N','R0_E'],
+    'R0_N':['NS_NC','R0_NW','R0_NE'],'R0_NW':['R0_W','R0_N'],
+    'R0_W':['R0_SW','EW_WC','R0_NW'],'R0_SW':['R0_S','R0_W'],
+    'NS_NC':['R0_N','NS_NM'],'NS_NM':['NS_NC','R2_S'],
+    'R2_S':['NS_NM','R2_SE','R2_SW'],'R2_SE':['R2_E','R2_S'],
+    'R2_E':['R2_NE','NR_EM','R2_SE'],'R2_NE':['R2_N','R2_E'],
+    'R2_N':['NS_N1','R2_NW','R2_NE'],'R2_NW':['R2_W','R2_N'],
+    'R2_W':['R2_SW','NR_WM','R2_NW'],'R2_SW':['R2_S','R2_W'],
+    'NS_N1':['R2_N','NS_N2'],'NS_N2':['NS_N1','G_N','PP10'],
+    'EW_W1':['G_W','EW_W2'],'EW_W2':['EW_W1','R4_W'],
+    'R4_W':['EW_W2','R4_SW','R4_NW'],'R4_NW':['R4_N','R4_W'],
+    'R4_N':['HOSP_J','R4_NE','R4_NW'],'R4_NE':['R4_E','R4_N'],
+    'R4_E':['EW_WM','R4_SE','R4_NE'],'R4_SE':['R4_S','R4_E'],
+    'R4_S':['R4_SW','R4_SE'],'R4_SW':['R4_W','R4_S'],
+    'EW_WM':['R4_E','EW_WC','PP6_N'],'EW_WC':['EW_WM','R0_W'],
+    'EW_EC':['R0_E','EW_EM'],'EW_EM':['EW_EC','R3_W'],
+    'R3_W':['EW_EM','R3_SW','R3_NW'],'R3_NW':['R3_N','R3_W'],
+    'R3_N':['EAST_N1','R3_NE','R3_NW'],'R3_NE':['R3_E','R3_N'],
+    'R3_E':['EW_E1','R3_SE','R3_NE'],'R3_SE':['R3_S','R3_E'],
+    'R3_S':['SE_N','RES_N','R3_SW','R3_SE'],'R3_SW':['R3_W','R3_S'],
+    'EW_E1':['R3_E','EW_E2','DORM_EW'],'EW_E2':['EW_E1','G_E'],
+    'SX_W':['R1_W','PP15_J'],'SX_WW':['PP15_J'],
+    'SX_E':['R1_E','SX_EE'],'SX_EE':['SX_E','SE_N'],
+    'SE_S1':['G_SE','SE_S2'],'SE_S2':['SE_S1','SE_N','SE_ART'],
+    'SE_N':['SE_S2','R3_S','SX_EE'],'SE_ART':['SE_S2','ART_J'],
+    'ART_J':['SE_ART','ART_W'],'ART_W':['ART_J'],
+    'NR_NW':['G_NW','NR_W'],'NR_W':['NR_NW','NR_WM'],
+    'NR_WM':['NR_W','R2_W','PP3_ACC'],'NR_EM':['R2_E','NR_E','PP4_ACC'],
+    'NR_E':['NR_EM','NR_NESPUR','PP14','DORM_N'],
+    'NR_NESPUR':['NR_E','NR_NE'],'NR_NE':['NR_NESPUR','G_NE'],
+    'HOSP_J':['R4_N','HOSP_E'],'HOSP_E':['HOSP_J','APT_J'],
+    'APT_J':['HOSP_E','APT_S'],'APT_S':['APT_J','PP5_J','PP13_J'],
+    'PP5_J':['APT_S','PP5_ACC2'],'PP5_ACC2':['PP5_J','PP5'],
+    'PP13_J':['APT_S','PP13'],
+    'DORM_EW':['EW_E1','DORM_N','DORM_S'],'DORM_N':['DORM_EW','NR_E'],
+    'DORM_S':['DORM_EW','DORM_SE'],'DORM_SE':['DORM_S','PP7'],
+    'SA_W':['NS_SPER','SA_M'],'SA_M':['SA_W','SA_P11'],
+    'SA_P11':['SA_M','SA_E','PP11'],'SA_E':['SA_P11'],
+    'RES_N':['R3_S','RES_M'],'RES_M':['RES_N','RES_E'],'RES_E':['RES_M','PP9'],
+    'AS_E1':['NS_SC','AS_E2','PP1_ACC'],'AS_E2':['AS_E1','PP2'],
+    'PP1_ACC':['PP1','AS_E1'],'PP1':['PP1_ACC'],
+    'PP2':['AS_E2'],
+    'PP3_ACC':['NR_WM','PP3'],'PP3':['PP3_ACC'],
+    'PP4_ACC':['NR_EM','PP4'],'PP4':['PP4_ACC'],
+    'PP5':['PP5_ACC2'],
+    'PP6_N':['EW_WM','PP6'],'PP6':['PP6_N'],
+    'PP7':['DORM_SE'],
+    'EAST_N1':['R3_N','PP12','EAST_N2'],'EAST_N2':['EAST_N1','PP8'],
+    'PP8':['EAST_N2'],'PP9':['RES_E'],'PP10':['NS_N2'],'PP11':['SA_P11'],
+    'PP12':['EAST_N1'],'PP13':['PP13_J'],'PP14':['NR_E'],
+    'PP15_J':['SX_W','SX_WW','PP15_ACC'],'PP15_ACC':['PP15_J','PP15'],
+    'PP15':['PP15_ACC'],
+}
+
+# ── One-way edges: roundabout rings are CCW-only ──────────────────────
+# A car may NOT travel the REVERSE of these directed edges.
+_ONE_WAY = frozenset([
+    ('R0_SW','R0_S'),('R0_S','R0_SE'),('R0_SE','R0_E'),('R0_E','R0_NE'),
+    ('R0_NE','R0_N'),('R0_N','R0_NW'),('R0_NW','R0_W'),('R0_W','R0_SW'),
+    ('R1_SW','R1_S'),('R1_S','R1_SE'),('R1_SE','R1_E'),('R1_E','R1_NE'),
+    ('R1_NE','R1_N'),('R1_N','R1_NW'),('R1_NW','R1_W'),('R1_W','R1_SW'),
+    ('R2_SW','R2_S'),('R2_S','R2_SE'),('R2_SE','R2_E'),('R2_E','R2_NE'),
+    ('R2_NE','R2_N'),('R2_N','R2_NW'),('R2_NW','R2_W'),('R2_W','R2_SW'),
+    ('R3_SW','R3_S'),('R3_S','R3_SE'),('R3_SE','R3_E'),('R3_E','R3_NE'),
+    ('R3_NE','R3_N'),('R3_N','R3_NW'),('R3_NW','R3_W'),('R3_W','R3_SW'),
+    ('R4_SW','R4_S'),('R4_S','R4_SE'),('R4_SE','R4_E'),('R4_E','R4_NE'),
+    ('R4_NE','R4_N'),('R4_N','R4_NW'),('R4_NW','R4_W'),('R4_W','R4_SW'),
+])
+
+# ── Gate / lot mappings ───────────────────────────────────────────────
+_GATE_WP = {
+    'south-main':'G_SM','south-east':'G_SE','east':'G_E',
+    'north':'G_N','west':'G_W','northeast':'G_NE','northwest':'G_NW',
+}
+_LOT_WP = {
+    'P1':'PP1','P2':'PP2','P3':'PP3','P4':'PP4','P5':'PP5',
+    'P6':'PP6','P7':'PP7','P8':'PP8','P9':'PP9','P10':'PP10',
+    'P11':'PP11','P12':'PP12','P13':'PP13','P14':'PP14','P15':'PP15',
+}
+_LOT_NAMES = {
+    'P1':'Admin Parking','P2':'Academic Lot (2 Hr)','P3':'Stadium Lot (Event)',
+    'P4':'Arena Lot (Event)','P5':'Hospital Parking','P6':'Library & Arts Lot',
+    'P7':'Resident Parking','P8':'Central Parking Garage','P9':'Research Park Lot',
+    'P10':'North Visitor Lot','P11':'South Campus Lot',
+    'P12':'Engineering & Science Lot','P13':'Medical Campus Lot',
+    'P14':'Sports Complex Lot','P15':'Chapel & Arts Lot',
+}
+
+_TURN_PENALTY = 8.0   # extra distance-units per radian of heading change
+
+
+def _wp_dist(a, b):
+    pa, pb = _WP[a], _WP[b]
+    return math.hypot(pb[0]-pa[0], pb[1]-pa[1])
+
+
+def _edge_legal(frm, to):
+    """Return True if driving from→to is permitted under traffic rules."""
+    return (to, frm) not in _ONE_WAY
+
+
+def _turn_cost(prev, cur, nxt):
+    """Turn-angle penalty (distance-units) for the bend prev→cur→nxt."""
+    if prev is None:
+        return 0.0
+    p1, p2, p3 = _WP[prev], _WP[cur], _WP[nxt]
+    in_x,  in_z  = p2[0]-p1[0], p2[1]-p1[1]
+    out_x, out_z = p3[0]-p2[0], p3[1]-p2[1]
+    len_in  = math.hypot(in_x,  in_z)  or 1.0
+    len_out = math.hypot(out_x, out_z) or 1.0
+    cos_a = max(-1.0, min(1.0,
+        (in_x*out_x + in_z*out_z) / (len_in * len_out)))
+    return _TURN_PENALTY * math.acos(cos_a)
+
+
+def _astar(start, end):
+    """
+    A* on the directed campus graph with turn-cost penalties.
+
+    Returns (path, cost) where path is a list of waypoint keys, or
+    (None, inf) when no valid legal path exists.
+    """
+    if start not in _WP or end not in _WP:
+        return None, float('inf')
+    if start == end:
+        return [start], 0.0
+
+    def h(k):
+        a, b = _WP[k], _WP[end]
+        return math.hypot(b[0]-a[0], b[1]-a[1])
+
+    # heap entry: (f, g, node, prev_node)
+    heap = [(h(start), 0.0, start, None)]
+    best_g  = {start: 0.0}
+    came_from = {}   # node → prev_node
+    closed  = set()
+
+    while heap:
+        f, g, cur, prev = _hq.heappop(heap)
+        if cur in closed:
+            continue
+        closed.add(cur)
+        came_from[cur] = prev
+
+        if cur == end:
+            path = []
+            node = cur
+            while node is not None:
+                path.append(node)
+                node = came_from.get(node)
+            return list(reversed(path)), g
+
+        for nb in _EDGES.get(cur, []):
+            if nb not in _WP or nb in closed:
+                continue
+            if not _edge_legal(cur, nb):
+                continue
+            step = _wp_dist(cur, nb) + _turn_cost(prev, cur, nb)
+            new_g = g + step
+            if new_g < best_g.get(nb, float('inf')):
+                best_g[nb] = new_g
+                _hq.heappush(heap, (new_g + h(nb), new_g, nb, cur))
+
+    return None, float('inf')
+
+
+def find_valid_path(start_gate_id='south-main'):
+    """
+    Find the shortest legal path from a campus gate to the nearest parking lot.
+
+    Considers all 15 parking lots and returns the one reachable with the
+    lowest A* cost (Euclidean distance + turn penalties, one-way enforced).
+
+    Args:
+        start_gate_id: one of 'south-main', 'south-east', 'east', 'north',
+                       'west', 'northeast', 'northwest'
+
+    Returns:
+        dict with keys:
+          lot_id    – winning lot ('P1'…'P15')
+          lot_name  – human-readable lot name
+          path      – ordered list of waypoint keys
+          cost      – total path cost (distance + turn penalties)
+          positions – list of [x, z] world coordinates for the path
+        or None if no lot is reachable.
+    """
+    start_wp = _GATE_WP.get(start_gate_id)
+    if not start_wp:
+        raise ValueError(
+            f"Unknown gate {start_gate_id!r}. "
+            f"Valid: {list(_GATE_WP)}"
+        )
+
+    best = {'lot_id': None, 'path': None, 'cost': float('inf')}
+    for lot_id, end_wp in _LOT_WP.items():
+        path, cost = _astar(start_wp, end_wp)
+        if path and cost < best['cost']:
+            best = {'lot_id': lot_id, 'path': path, 'cost': cost}
+
+    if best['lot_id'] is None:
+        return None
+
+    return {
+        'lot_id':    best['lot_id'],
+        'lot_name':  _LOT_NAMES.get(best['lot_id'], best['lot_id']),
+        'path':      best['path'],
+        'cost':      best['cost'],
+        'positions': [_WP[k] for k in best['path'] if k in _WP],
+    }
+
+
+def find_path_to_lot(lot_id, start_gate_id='south-main'):
+    """
+    Find the valid path from a campus gate to a specific parking lot.
+
+    Args:
+        lot_id:        parking lot ID ('P1'…'P15')
+        start_gate_id: entry gate ID
+
+    Returns:
+        dict with lot_id, path, cost, positions, or None if unreachable.
+    """
+    start_wp = _GATE_WP.get(start_gate_id)
+    end_wp   = _LOT_WP.get(lot_id)
+    if not start_wp or not end_wp:
+        return None
+    path, cost = _astar(start_wp, end_wp)
+    if not path:
+        return None
+    return {
+        'lot_id':    lot_id,
+        'lot_name':  _LOT_NAMES.get(lot_id, lot_id),
+        'path':      path,
+        'cost':      cost,
+        'positions': [_WP[k] for k in path if k in _WP],
+    }
+
+
+# ── Quick self-test (run python campus_env.py to verify) ─────────────
+def _selftest():
+    print("\n── Parking Navigation Self-Test ──")
+    for gate in ('south-main', 'east', 'north', 'west'):
+        result = find_valid_path(gate)
+        if result:
+            print(f"  {gate:12s} → {result['lot_id']} ({result['lot_name']})"
+                  f"  cost={result['cost']:.0f}  hops={len(result['path'])}")
+        else:
+            print(f"  {gate:12s} → NO PATH FOUND")
+    print()
+
+
+# ═════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═════════════════════════════════════════════════════════════════════
 
@@ -1031,6 +1347,7 @@ def main():
     add_hud()
     cam.apply()
     print(f"  Campus ready in {time.time()-t0:.1f}s")
+    _selftest()
     print("\n  MOUSE: Left-drag=orbit | Right-drag=pan | Scroll=zoom")
     print("  KEYS : Arrows=pan | A/D=orbit | W/S=tilt | +/-=zoom | R=reset | Q=quit")
     print("═" * 60 + "\n")

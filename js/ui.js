@@ -3,8 +3,9 @@ const AppUI = (() => {
   let currentMode        = null;   // 'regular' | 'event'
   let selectedDest       = null;
   let selectedLot        = null;
-  let currentRoute       = null;   // raw BFS points (for direction text)
-  let currentSmoothRoute = null;   // Catmull-Rom points (for vehicle + display)
+  let currentRoute       = null;   // raw A* points (for direction text)
+  let currentSmoothRoute = null;   // Catmull-Rom points (for vehicle + line)
+  let currentGateId      = CAMPUS.userStart.gateId;  // active entry gate
   let countdownVal = 20;
   let countdownInterval = null;
 
@@ -27,11 +28,10 @@ const AppUI = (() => {
   function init() {
     _bindAll();
     _startCountdown();
-    // Register 100m callback
     VehicleController.setNear100mCallback(_show100mPreview);
   }
 
-  // ── Countdown (20 sec, then mode modal) ──────────────────────────
+  // ── Countdown ────────────────────────────────────────────────────
   function _startCountdown() {
     countdownVal = 20;
     $('countdown-number').textContent = countdownVal;
@@ -40,7 +40,7 @@ const AppUI = (() => {
       $('countdown-number').textContent = countdownVal;
       if (countdownVal <= 0) {
         clearInterval(countdownInterval);
-        AppScene.stopAutoRotate();           // ← stop rotation here
+        AppScene.stopAutoRotate();
         _showModeModal();
       }
     }, 1000);
@@ -51,8 +51,43 @@ const AppUI = (() => {
     showId('mode-modal');
   }
 
+  // ── Gate selector helper ─────────────────────────────────────────
+  function _applyGateSelection(gateId) {
+    currentGateId = gateId || 'south-main';
+    CAMPUS.userStart.gateId = currentGateId;
+
+    const gate = CAMPUS.gates.find(g => g.id === currentGateId);
+    const gateName = gate ? gate.name : 'Campus Gate';
+
+    // Update location badge
+    const badge = $('user-location-badge');
+    const txt   = $('ulb-text');
+    if (txt)   txt.textContent = `📍 ${gateName}`;
+    if (badge) show(badge);
+
+    // Update panel location strip
+    const panelGate = $('panel-gate-name');
+    if (panelGate) panelGate.textContent = gateName;
+
+    // Teleport user vehicle to selected gate
+    const g = CAMPUS.gates.find(gt => gt.id === currentGateId);
+    const userMesh = VehicleController.getUserMesh();
+    if (g && userMesh) {
+      userMesh.position.set(g.pos[0], 1, g.pos[1]);
+      userMesh.rotation.y = g.angle ?? Math.PI;
+    }
+
+    // Pan camera to gate
+    if (g) AppScene.panToPoint(g.pos[0], g.pos[1]);
+  }
+
   // ── Bind all buttons ──────────────────────────────────────────────
   function _bindAll() {
+    // Gate selector (in mode modal)
+    $('gate-select').addEventListener('change', e => {
+      _applyGateSelection(e.target.value);
+    });
+
     // Skip intro
     $('skip-intro-btn').addEventListener('click', () => {
       clearInterval(countdownInterval);
@@ -77,12 +112,16 @@ const AppUI = (() => {
     // Regular panel
     $('find-parking-btn').addEventListener('click', _findRegularParking);
     $('back-from-regular').addEventListener('click', _resetToModeModal);
-    $('close-regular').addEventListener('click', () => { hideId('regular-panel'); CampusBuilder.resetAllLotHighlights(); });
+    $('close-regular').addEventListener('click', () => {
+      hideId('regular-panel'); CampusBuilder.resetAllLotHighlights();
+    });
 
     // Event panel
     $('find-event-parking-btn').addEventListener('click', _findEventParking);
     $('back-from-event').addEventListener('click', _resetToModeModal);
-    $('close-event').addEventListener('click', () => { hideId('event-panel'); CampusBuilder.resetAllLotHighlights(); });
+    $('close-event').addEventListener('click', () => {
+      hideId('event-panel'); CampusBuilder.resetAllLotHighlights();
+    });
 
     // Destination dropdown
     $('destination-select').addEventListener('change', () => {
@@ -113,21 +152,26 @@ const AppUI = (() => {
   }
 
   function _showUserLocation() {
-    const gate = CAMPUS.gates.find(g => g.id === CAMPUS.userStart.gateId);
+    const gate = CAMPUS.gates.find(g => g.id === currentGateId);
     const name = gate ? gate.name : 'Main Gate';
-    _toast(`📍 Your location: ${name}`);
-    // Show persistent location badge
+    _toast(`📍 Entering from: ${name}`);
     const badge = $('user-location-badge');
     const txt   = $('ulb-text');
     if (txt)   txt.textContent = `📍 ${name}`;
     if (badge) show(badge);
+    const panelGate = $('panel-gate-name');
+    if (panelGate) panelGate.textContent = name;
   }
 
   function _resetToModeModal() {
     hideId('regular-panel'); hideId('event-panel');
     hideId('parking-results'); hideId('event-parking-results');
     hideId('direction-panel');
-    CampusBuilder.resetAllLotHighlights(); CampusBuilder.clearRoute();
+    CampusBuilder.resetAllLotHighlights();
+    CampusBuilder.clearRoute();
+    if (typeof CampusBuilder.clearSlotHighlights === 'function') {
+      CampusBuilder.clearSlotHighlights();
+    }
     _stopAINavigator();
     _showModeModal();
     $('destination-select').value   = '';
@@ -138,21 +182,48 @@ const AppUI = (() => {
     currentSmoothRoute = null;
   }
 
-  // ── Regular parking search ────────────────────────────────────────
+  // ── Regular parking search ─────────────────────────────────────────
+  // Uses Navigation.findBestLot() to rank lots by A* path cost rather
+  // than static priority, so the route is the shortest legal path from
+  // the user's chosen entry gate.
   function _findRegularParking() {
     selectedDest = $('destination-select').value;
+    const bldg   = CAMPUS.buildings.find(b => b.id === selectedDest);
+
+    // Candidate lots from building preference list
+    const candidateIds = CAMPUS.buildingParking[selectedDest] || [];
+
+    // AI smart selection: find lot with shortest valid A* route
+    let optimalResult = null;
+    try {
+      optimalResult = Navigation.findBestLot(candidateIds, currentGateId);
+    } catch (e) {
+      console.warn('[UI] findBestLot failed:', e.message);
+    }
+
+    // Fall back to full candidate list ordered by parking manager
     const lots = ParkingManager.getLotsForBuilding(selectedDest);
-    const bldg = CAMPUS.buildings.find(b => b.id === selectedDest);
+
+    // Re-order: put optimal lot first if found
+    if (optimalResult) {
+      const idx = lots.findIndex(l => l.id === optimalResult.lotId);
+      if (idx > 0) {
+        const [opt] = lots.splice(idx, 1);
+        lots.unshift(opt);
+      }
+    }
 
     CampusBuilder.resetAllLotHighlights();
     lots.forEach((lot, i) => {
-      const col = i === 0
-        ? (lot.free > 0 ? 0x00FF44 : 0xFF2222)
-        : (lot.free > 0 ? 0xFFAA00 : 0xFF5555);
+      const isOptimal = optimalResult && lot.id === optimalResult.lotId;
+      const col = isOptimal
+        ? 0x00FF88
+        : (i === 0
+          ? (lot.free > 0 ? 0x00FF44 : 0xFF2222)
+          : (lot.free > 0 ? 0xFFAA00 : 0xFF5555));
       CampusBuilder.highlightLot(lot.id, col);
     });
 
-    // Pan camera to destination building and highlight it
     if (bldg) {
       AppScene.panToPoint(bldg.pos[0], bldg.pos[1]);
       CampusBuilder.highlightDestinationBuilding(selectedDest);
@@ -160,9 +231,27 @@ const AppUI = (() => {
 
     $('results-title').textContent = bldg ? `Parking near ${bldg.name}` : 'Nearby Parking';
     const list = $('parking-lot-list');
-    list.innerHTML = lots.length ? '' : '<p class="no-results">No parking found near this destination.</p>';
-    lots.forEach(lot => list.appendChild(_lotCard(lot)));
+    list.innerHTML = '';
+
+    if (!lots.length) {
+      list.innerHTML = '<p class="no-results">No parking found near this destination.</p>';
+    } else {
+      lots.forEach((lot, i) => {
+        const card = _lotCard(lot);
+        if (optimalResult && lot.id === optimalResult.lotId) {
+          const badge = document.createElement('div');
+          badge.className = 'optimal-badge';
+          badge.innerHTML = '🤖 AI Optimal Route';
+          card.insertAdjacentElement('afterbegin', badge);
+        }
+        list.appendChild(card);
+      });
+    }
     showId('parking-results');
+
+    if (optimalResult) {
+      _toast(`🤖 Best lot: ${optimalResult.lotId} via shortest legal path`);
+    }
   }
 
   // ── Event parking search ──────────────────────────────────────────
@@ -175,7 +264,6 @@ const AppUI = (() => {
     CampusBuilder.resetAllLotHighlights();
     lots.forEach(lot => CampusBuilder.highlightLot(lot.id, lot.isPaidLot ? 0xFFAA00 : 0x00FF66));
 
-    // Pan camera to venue building and highlight it
     if (venue) {
       AppScene.panToPoint(venue.pos[0], venue.pos[1]);
       CampusBuilder.highlightDestinationBuilding(venueId);
@@ -193,8 +281,6 @@ const AppUI = (() => {
       list.appendChild(card);
     });
     showId('event-parking-results');
-
-    // Set destination to the venue for navigation
     selectedDest = venueId;
   }
 
@@ -239,8 +325,8 @@ const AppUI = (() => {
     $('popup-lot-name').textContent = lot.name;
     $('popup-free').textContent     = `${lot.free} free`;
     $('popup-total').textContent    = `${lot.spots} total`;
-    $('popup-avail-bar').style.width       = pct + '%';
-    $('popup-avail-bar').style.background  = pct>50 ? '#27ae60' : pct>15 ? '#f39c12' : '#e74c3c';
+    $('popup-avail-bar').style.width      = pct + '%';
+    $('popup-avail-bar').style.background = pct>50 ? '#27ae60' : pct>15 ? '#f39c12' : '#e74c3c';
     $('popup-time-limit').textContent = lot.timeLimit ? `${lot.timeLimit} min` : 'No limit';
     $('popup-cost').textContent       = lot.paid ? `$${lot.rate}/hr` : 'Free';
     showId('lot-popup');
@@ -250,53 +336,61 @@ const AppUI = (() => {
   function _showDirections(lotId) {
     selectedLot        = lotId;
     const lot          = CAMPUS.parkingLots.find(l => l.id === lotId);
-    currentRoute       = Navigation.getRoute(lotId);          // raw – for text steps
-    currentSmoothRoute = Navigation.getSmoothRoute(lotId);    // smooth – for vehicle & line
+    currentRoute       = Navigation.getRoute(lotId, currentGateId);
+    currentSmoothRoute = Navigation.getSmoothRoute(lotId, currentGateId);
 
     $('direction-title').textContent    = `Navigate to ${lot ? lot.name : lotId}`;
     $('direction-distance').textContent = `~${Navigation.estimateDistance(currentRoute)} mi`;
     $('direction-time').textContent     = Navigation.estimateTime(currentRoute);
 
-    const steps = Navigation.buildDirections(currentRoute, lotId);
-    $('direction-steps').innerHTML = steps.map((s,i) =>
+    const steps = Navigation.buildDirections(currentRoute, lotId, currentGateId);
+    const stepsContainer = $('direction-steps');
+    stepsContainer.innerHTML = steps.map((s, i) =>
       `<div class="direction-step">
         <div class="step-num">${i+1}</div>
         <div class="step-text">${s}</div>
       </div>`).join('');
 
-    // Show smooth spline on map (avoids zig-zag display through roundabouts)
+    // Traffic rules reminder strip
+    const strip = document.createElement('div');
+    strip.className = 'traffic-rules-strip';
+    strip.innerHTML =
+      '<strong>🚦 Traffic Rules Active:</strong> ' +
+      'Roundabouts are <strong>CCW only</strong>. ' +
+      'One-way roads are enforced. ' +
+      'Route avoids all illegal turns.';
+    stepsContainer.appendChild(strip);
+
     CampusBuilder.showRoute(currentSmoothRoute);
     hideId('parking-results'); hideId('event-parking-results');
     showId('direction-panel');
   }
 
   function _backToResults() {
-    hideId('direction-panel'); CampusBuilder.clearRoute();
+    hideId('direction-panel');
+    CampusBuilder.clearRoute();
     currentMode === 'regular' ? showId('parking-results') : showId('event-parking-results');
   }
 
-  // ── Navigation (animated, camera follows user vehicle) ────────────
+  // ── Navigation (animated) ────────────────────────────────────────
   function _startNavigation() {
     if (!currentRoute || !selectedLot) return;
     hideId('direction-panel'); hideId('regular-panel'); hideId('event-panel');
     showId('nav-active-overlay'); hideId('nav-arrived');
 
     const lot   = ParkingManager.getLot(selectedLot);
-    const steps = Navigation.buildDirections(currentRoute, selectedLot);
+    const steps = Navigation.buildDirections(currentRoute, selectedLot, currentGateId);
     let   stepIdx = 0;
 
     $('nav-current-step').innerHTML = steps[0] || 'Navigating to parking lot…';
     $('nav-next-step').innerHTML    = steps[1] || '';
     $('nav-distance').textContent   = Navigation.estimateDistance(currentRoute) + ' mi';
 
-    // Build and show AI Navigator panel
-    _aiMessages  = Navigation.buildAIInstructions(currentRoute, selectedLot);
-    _aiStepIdx   = 0;
+    _aiMessages = Navigation.buildAIInstructions(currentRoute, selectedLot, currentGateId);
+    _aiStepIdx  = 0;
     _showAINavigator();
 
-    // Dense route: intermediate points every 10 units so the vehicle
-    // can't short-cut across roundabout islands between sparse nodes.
-    VehicleController.startNavigation(Navigation.getDenseRoute(selectedLot), () => {
+    VehicleController.startNavigation(Navigation.getDenseRoute(selectedLot, currentGateId), () => {
       if (lot) {
         $('spaces-count').textContent = lot.free;
         showId('nav-arrived');
@@ -305,35 +399,33 @@ const AppUI = (() => {
         _toast(`🅿️ ${lot.free} spaces available in ${lot.name}`);
         hideId('arrival-preview');
         if (_previewTimer) { clearTimeout(_previewTimer); _previewTimer = null; }
-        // Final AI message on arrival
         _aiTypeMessage(`🎉 <strong>You have arrived!</strong> ${lot.free} space(s) available in <strong>${lot.name}</strong>. Park safely!`);
+        // Highlight the claimed parking slot in 3D
+        const parkedSlots = VehicleController.getParkedSlots(selectedLot);
+        const mySlot = parkedSlots.find(s => !s.occupied);
+        if (mySlot && typeof CampusBuilder.highlightSlot === 'function') {
+          CampusBuilder.highlightSlot(selectedLot, mySlot.x, mySlot.z);
+        }
       }
     }, selectedLot);
 
-    // Step-by-step nav overlay updates
     const totalMs = parseFloat(Navigation.estimateTime(currentRoute)) * 60000;
-    const stepMs  = Math.max(2000, totalMs / Math.max(steps.length-1, 1));
+    const stepMs  = Math.max(2000, totalMs / Math.max(steps.length - 1, 1));
     const stepTimer = setInterval(() => {
       stepIdx++;
       if (stepIdx < steps.length) {
         $('nav-current-step').innerHTML = steps[stepIdx] || '';
         $('nav-next-step').innerHTML    = steps[stepIdx+1] || '';
-      } else {
-        clearInterval(stepTimer);
-      }
+      } else { clearInterval(stepTimer); }
     }, stepMs);
 
-    // Advance AI Navigator message every 8 s
     _aiStepTimer = setInterval(() => {
       _aiStepIdx++;
       if (_aiStepIdx < _aiMessages.length) {
         _aiTypeMessage(_aiMessages[_aiStepIdx]);
-      } else {
-        clearInterval(_aiStepTimer);
-      }
+      } else { clearInterval(_aiStepTimer); }
     }, 8000);
 
-    // Override end-nav to also clear timers
     $('end-navigation-btn').onclick = () => {
       clearInterval(stepTimer);
       _stopAINavigator();
@@ -343,7 +435,11 @@ const AppUI = (() => {
 
   function _cancelNavigation() {
     VehicleController.stopNavigation();
-    CampusBuilder.clearRoute(); CampusBuilder.resetAllLotHighlights();
+    CampusBuilder.clearRoute();
+    CampusBuilder.resetAllLotHighlights();
+    if (typeof CampusBuilder.clearSlotHighlights === 'function') {
+      CampusBuilder.clearSlotHighlights();
+    }
     hideId('nav-active-overlay'); hideId('direction-panel');
     hideId('arrival-preview');
     if (_previewTimer) { clearTimeout(_previewTimer); _previewTimer = null; }
@@ -357,9 +453,7 @@ const AppUI = (() => {
     const panel = $('ai-navigator');
     if (!panel) return;
     const bubble = $('ai-bubble');
-    if (bubble && _aiMessages.length) {
-      bubble.innerHTML = _aiMessages[0];
-    }
+    if (bubble && _aiMessages.length) bubble.innerHTML = _aiMessages[0];
     show(panel);
     _aiStepIdx = 0;
   }
@@ -370,7 +464,6 @@ const AppUI = (() => {
     hideId('ai-navigator');
   }
 
-  // Simulate LLM typing: show dots briefly then swap in the real message
   function _aiTypeMessage(html) {
     const bubble = $('ai-bubble');
     const dots   = $('ai-typing-dots');
@@ -382,7 +475,7 @@ const AppUI = (() => {
       if (dots) hide(dots);
       bubble.innerHTML = html;
       _aiTypingTimer = null;
-    }, 900);   // 0.9 s "thinking" delay
+    }, 900);
   }
 
   // ── 100m Arrival Preview ──────────────────────────────────────────
@@ -393,12 +486,10 @@ const AppUI = (() => {
     $('ap-lot-name').textContent = lot.name;
     $('ap-distance').textContent = '📍 <100m away';
 
-    // Build slot grid
     const gridEl = $('ap-grid');
     gridEl.innerHTML = '';
     const parkedSlots = VehicleController.getParkedSlots(lotId);
 
-    // If we have parked slot data use it, otherwise simulate
     if (parkedSlots && parkedSlots.length > 0) {
       parkedSlots.forEach(slot => {
         const sq = document.createElement('div');
@@ -406,7 +497,6 @@ const AppUI = (() => {
         gridEl.appendChild(sq);
       });
     } else {
-      // Fallback: render based on lot spots with random occupancy
       const total = lot.spots;
       const freeCount = lot.free || Math.floor(total * 0.4);
       for (let i = 0; i < Math.min(total, 60); i++) {
@@ -417,8 +507,6 @@ const AppUI = (() => {
     }
 
     showId('arrival-preview');
-
-    // Auto-hide after 30 seconds
     if (_previewTimer) clearTimeout(_previewTimer);
     _previewTimer = setTimeout(() => {
       hideId('arrival-preview');
@@ -426,7 +514,7 @@ const AppUI = (() => {
     }, 30000);
   }
 
-  // ── Parking live update callback ──────────────────────────────────
+  // ── Live parking update callback ──────────────────────────────────
   function onParkingUpdate(state) {
     document.querySelectorAll('.lot-card').forEach(card => {
       const lot = state[card.dataset.lotId];

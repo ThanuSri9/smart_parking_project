@@ -438,6 +438,33 @@ const CAMPUS = {
     [460,-100, 12, Math.PI/2],
   ],
 
+  // ─── TRAFFIC RULES ────────────────────────────────────────────────
+  // One-way edges: roundabout rings are CCW-only (counterclockwise from above).
+  // The REVERSE of any listed pair is an illegal manoeuvre.
+  // Built into a Set at startup by Navigation.init() for O(1) lookup.
+  trafficRules: {
+    oneWayEdges: [
+      // Center roundabout CCW: SW→S→SE→E→NE→N→NW→W→SW
+      ['R0_SW','R0_S'],['R0_S','R0_SE'],['R0_SE','R0_E'],['R0_E','R0_NE'],
+      ['R0_NE','R0_N'],['R0_N','R0_NW'],['R0_NW','R0_W'],['R0_W','R0_SW'],
+      // South roundabout CCW
+      ['R1_SW','R1_S'],['R1_S','R1_SE'],['R1_SE','R1_E'],['R1_E','R1_NE'],
+      ['R1_NE','R1_N'],['R1_N','R1_NW'],['R1_NW','R1_W'],['R1_W','R1_SW'],
+      // North roundabout CCW
+      ['R2_SW','R2_S'],['R2_S','R2_SE'],['R2_SE','R2_E'],['R2_E','R2_NE'],
+      ['R2_NE','R2_N'],['R2_N','R2_NW'],['R2_NW','R2_W'],['R2_W','R2_SW'],
+      // East roundabout CCW
+      ['R3_SW','R3_S'],['R3_S','R3_SE'],['R3_SE','R3_E'],['R3_E','R3_NE'],
+      ['R3_NE','R3_N'],['R3_N','R3_NW'],['R3_NW','R3_W'],['R3_W','R3_SW'],
+      // West roundabout CCW
+      ['R4_SW','R4_S'],['R4_S','R4_SE'],['R4_SE','R4_E'],['R4_E','R4_NE'],
+      ['R4_NE','R4_N'],['R4_N','R4_NW'],['R4_NW','R4_W'],['R4_W','R4_SW'],
+    ],
+    // Cost penalty (distance-units) per radian of heading change.
+    // Discourages unnecessary turns and U-turns (π rad ≈ 25 extra units).
+    turnPenaltyFactor: 8.0,
+  },
+
   // ─── SPECIAL FEATURES ──────────────────────────────────────────────
   waterPond:  { pos:[210, 390], rx:70, rz:45 },
   bridge:     { x1:145,z1:390, x2:275,z2:390, w:14 },
