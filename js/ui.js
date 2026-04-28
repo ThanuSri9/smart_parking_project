@@ -190,10 +190,11 @@ const AppUI = (() => {
     selectedDest = $('destination-select').value;
     const bldg   = CAMPUS.buildings.find(b => b.id === selectedDest);
 
-    // Candidate lots from building preference list
-    const candidateIds = CAMPUS.buildingParking[selectedDest] || [];
+    // Get the 3 physically nearest non-event lots to the destination building
+    const lots = Navigation.getNearestLots(selectedDest, 3);
+    const candidateIds = lots.map(l => l.id);
 
-    // AI smart selection: find lot with shortest valid A* route
+    // AI smart selection: find lot with shortest valid A* route from current gate
     let optimalResult = null;
     try {
       optimalResult = Navigation.findBestLot(candidateIds, currentGateId);
@@ -201,10 +202,7 @@ const AppUI = (() => {
       console.warn('[UI] findBestLot failed:', e.message);
     }
 
-    // Fall back to full candidate list ordered by parking manager
-    const lots = ParkingManager.getLotsForBuilding(selectedDest);
-
-    // Re-order: put optimal lot first if found
+    // Re-order: put optimal (shortest-path) lot first
     if (optimalResult) {
       const idx = lots.findIndex(l => l.id === optimalResult.lotId);
       if (idx > 0) {
@@ -375,6 +373,22 @@ const AppUI = (() => {
   // ── Navigation (animated) ────────────────────────────────────────
   function _startNavigation() {
     if (!currentRoute || !selectedLot) return;
+
+    // Compute route before showing overlay – if it fails, bail out gracefully
+    let denseRoute;
+    try {
+      denseRoute = Navigation.getDenseRoute(selectedLot, currentGateId);
+    } catch (e) {
+      console.warn('[UI] getDenseRoute failed, trying smooth route:', e.message);
+      try {
+        denseRoute = Navigation.getSmoothRoute(selectedLot, currentGateId);
+      } catch (e2) {
+        console.error('[UI] All route methods failed:', e2.message);
+        _toast('⚠️ Could not calculate route. Please try a different lot.');
+        return;
+      }
+    }
+
     hideId('direction-panel'); hideId('regular-panel'); hideId('event-panel');
     showId('nav-active-overlay'); hideId('nav-arrived');
 
@@ -390,7 +404,7 @@ const AppUI = (() => {
     _aiStepIdx  = 0;
     _showAINavigator();
 
-    VehicleController.startNavigation(Navigation.getDenseRoute(selectedLot, currentGateId), () => {
+    VehicleController.startNavigation(denseRoute, () => {
       if (lot) {
         $('spaces-count').textContent = lot.free;
         showId('nav-arrived');

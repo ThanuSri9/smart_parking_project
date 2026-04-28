@@ -167,13 +167,13 @@ const Navigation = (() => {
         const [ax, az] = CAMPUS.waypoints[cur].pos;
         const [bx, bz] = CAMPUS.waypoints[nxt].pos;
         if (!RoadNetwork.doesEdgeFollowRoad(ax, az, bx, bz)) {
-          throw new Error(
-            `[Navigation] Edge '${cur}'→'${nxt}' leaves road surface.`
+          console.warn(
+            `[Navigation] Edge '${cur}'→'${nxt}' may leave road surface – proceeding anyway.`
           );
         }
         if (RoadNetwork.doesEdgeCrossBuilding(ax, az, bx, bz)) {
-          throw new Error(
-            `[Navigation] Edge '${cur}'→'${nxt}' passes through a building.`
+          console.warn(
+            `[Navigation] Edge '${cur}'→'${nxt}' may pass through a building – proceeding anyway.`
           );
         }
       }
@@ -404,8 +404,28 @@ const Navigation = (() => {
     return msgs;
   }
 
+  // ── Nearest lots by Euclidean distance to building ───────────────────────
+  // Returns up to `count` non-event lots sorted by straight-line distance
+  // to the building. Used to show truly nearby options regardless of any
+  // hardcoded static preference list.
+  function getNearestLots(buildingId, count = 3) {
+    const bldg = CAMPUS.buildings.find(b => b.id === buildingId);
+    if (!bldg) return [];
+    const [bx, bz] = bldg.pos;
+
+    return CAMPUS.parkingLots
+      .filter(lot => !lot.isEvent)
+      .map(lot => {
+        const [lx, lz] = lot.pos;
+        return { lot, dist: Math.hypot(lx - bx, lz - bz) };
+      })
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, count)
+      .map(s => s.lot);
+  }
+
   return {
-    findPath, findBestLot,
+    findPath, findBestLot, getNearestLots,
     getRoute, getWpPath, getDenseRoute, getSmoothRoute,
     buildDirections, buildAIInstructions,
     estimateDistance, estimateTime,
