@@ -190,9 +190,9 @@ const AppUI = (() => {
     selectedDest = $('destination-select').value;
     const bldg   = CAMPUS.buildings.find(b => b.id === selectedDest);
 
-    // Get the 3 physically nearest non-event lots, enriched with live ParkingManager data
+    // Get the 3 physically nearest non-event lots, enriched with live status/availability
     const lots = Navigation.getNearestLots(selectedDest, 3)
-      .map(l => ParkingManager.getLot(l.id))
+      .map(l => ParkingManager.enrichLot(l.id))
       .filter(Boolean);
     const candidateIds = lots.map(l => l.id);
 

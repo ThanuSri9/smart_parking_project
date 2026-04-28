@@ -67,6 +67,13 @@ const ParkingManager = (() => {
   function getLot(id) { return state[id]; }
   function getAllLots() { return Object.values(state); }
 
+  // Returns a lot with status/pct fields added (same shape as getLotsForBuilding entries)
+  function enrichLot(id) {
+    const lot = state[id];
+    if (!lot) return null;
+    return { ...lot, pct: Math.round((lot.free / lot.spots) * 100), status: _statusLabel(lot) };
+  }
+
   // Return lots sorted by proximity to building, with availability info
   function getLotsForBuilding(buildingId, includeEvent = false) {
     const lotIds = CAMPUS.buildingParking[buildingId] || [];
@@ -118,7 +125,7 @@ const ParkingManager = (() => {
     return false;
   }
 
-  return { init, getLot, getAllLots, getLotsForBuilding, getEventLots, reserveSpot };
+  return { init, getLot, getAllLots, enrichLot, getLotsForBuilding, getEventLots, reserveSpot };
 })();
 
 // ═══════════════════════════════════════════════════════════════════════════════
