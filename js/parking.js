@@ -57,15 +57,32 @@ const ParkingManager = (() => {
     document.getElementById('total-vehicles').textContent  = totalVeh;
     document.getElementById('available-spots').textContent = totalFree;
     document.getElementById('occupied-spots').textContent  = totalVeh;
-    AppUI.onParkingUpdate(state);
+
+    // Pass enriched state (with status) so UI lot cards can read lot.status.label/color
+    const enriched = {};
+    Object.entries(state).forEach(([id, lot]) => {
+      enriched[id] = { ...lot, status: _statusLabel(lot) };
+    });
+    AppUI.onParkingUpdate(enriched);
+
     // Keep 3D slot markers in sync with live occupancy data
     Object.values(state).forEach(lot => {
       CampusBuilder.updateSlotOccupancy(lot.id, lot.free, lot.spots);
     });
   }
 
-  function getLot(id) { return state[id]; }
-  function getAllLots() { return Object.values(state); }
+  // getLot returns the live state enriched with a computed `status` object
+  // so every caller (UI lot cards, onParkingUpdate, directions panel) can
+  // safely read lot.status.label / lot.status.color without extra steps.
+  function getLot(id) {
+    const lot = state[id];
+    if (!lot) return null;
+    return { ...lot, status: _statusLabel(lot) };
+  }
+
+  function getAllLots() {
+    return Object.values(state).map(lot => ({ ...lot, status: _statusLabel(lot) }));
+  }
 
   // Return lots sorted by proximity to building, with availability info
   function getLotsForBuilding(buildingId, includeEvent = false) {
