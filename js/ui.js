@@ -190,8 +190,10 @@ const AppUI = (() => {
     selectedDest = $('destination-select').value;
     const bldg   = CAMPUS.buildings.find(b => b.id === selectedDest);
 
-    // Get the 3 physically nearest non-event lots to the destination building
-    const lots = Navigation.getNearestLots(selectedDest, 3);
+    // Get the 3 physically nearest non-event lots, enriched with live ParkingManager data
+    const lots = Navigation.getNearestLots(selectedDest, 3)
+      .map(l => ParkingManager.getLot(l.id))
+      .filter(Boolean);
     const candidateIds = lots.map(l => l.id);
 
     // AI smart selection: find lot with shortest valid A* route from current gate
