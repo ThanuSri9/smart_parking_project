@@ -289,12 +289,20 @@ const AppUI = (() => {
     const card = document.createElement('div');
     card.className = 'lot-card';
     card.dataset.lotId = lot.id;
-    const pct = lot.free > 0 ? Math.round((lot.free/lot.spots)*100) : 0;
-    const barCol = pct>50 ? '#27ae60' : pct>15 ? '#f39c12' : '#e74c3c';
+    const pct    = lot.free > 0 ? Math.round((lot.free / lot.spots) * 100) : 0;
+    const barCol = pct > 50 ? '#27ae60' : pct > 15 ? '#f39c12' : '#e74c3c';
+    // status is computed by ParkingManager.getLot(); guard against missing data
+    const status = lot.status || (pct === 0
+      ? { label:'Full',      color:'#e74c3c' }
+      : pct < 15
+        ? { label:'Almost Full', color:'#e67e22' }
+        : pct < 50
+          ? { label:'Limited',   color:'#f39c12' }
+          : { label:'Available', color:'#27ae60' });
     card.innerHTML = `
       <div class="lot-card-header">
         <span class="lot-id">${lot.id}</span>
-        <span class="lot-status" style="color:${lot.status.color}">${lot.status.label}</span>
+        <span class="lot-status" style="color:${status.color}">${status.label}</span>
       </div>
       <div class="lot-name">${lot.name}</div>
       <div class="lot-bar-wrap">
